@@ -1,4 +1,5 @@
 #include "PlayMode.hpp"
+#include "GP21IntroMode.hpp"
 
 #include "Connection.hpp"
 #include "Mode.hpp"
@@ -109,7 +110,9 @@ int main(int argc, char **argv) {
 	call_load_functions();
 
 	//------------ create game mode + make current --------------
-	Mode::set_current(std::make_shared< PlayMode >(client));
+	Mode::set_current(std::make_shared< GP21IntroMode >(
+		std::make_shared< PlayMode >(client)
+	));
 
 	//------------ main loop ------------
 
