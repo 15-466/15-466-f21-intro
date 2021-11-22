@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <random>
 #include <fstream>
+#include <array>
+#include <unordered_map>
 
 GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_mode(next_mode_) {
 	{ // ------ music ------
@@ -25,7 +27,7 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 		[[maybe_unused]] auto sine01 = [](float t) -> float {
 			t -= std::floor(t);
 			t = std::round(t * 512.0f) / 512.0f;
-			return std::round( std::sin(t * 2.0f * M_PI) * 1.0f ) / 1.0f;
+			return std::round( std::sin(t * 2.0f * float(M_PI)) * 1.0f ) / 1.0f;
 		};
 
 		constexpr float Attack  = 0.02f;
@@ -35,8 +37,8 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 
 		//play synth at given time for given length at given frequency:
 		auto tone = [&](float start, float len, float hz, float vol){
-			int32_t begin = start * 48000;
-			int32_t end = begin + (len + Release) * 48000;
+			int32_t begin = int32_t(start * 48000);
+			int32_t end = begin + int32_t((len + Release) * 48000);
 
 			for (int32_t sample = begin; sample < end; ++sample) {
 				float t = (sample - begin + 0.5f) / 48000.0f;
@@ -63,18 +65,18 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 			return 440.0f * std::exp2( (midi - 69.0f) / 12.0f );
 		};
 
-		[[maybe_unused]] auto C = [](int32_t oct) { return 12 + 12 * oct; };
-		[[maybe_unused]] auto Cs= [](int32_t oct) { return 13 + 12 * oct; };
-		[[maybe_unused]] auto D = [](int32_t oct) { return 14 + 12 * oct; };
-		[[maybe_unused]] auto Ds= [](int32_t oct) { return 15 + 12 * oct; };
-		[[maybe_unused]] auto E = [](int32_t oct) { return 16 + 12 * oct; };
-		[[maybe_unused]] auto F = [](int32_t oct) { return 17 + 12 * oct; };
-		[[maybe_unused]] auto Fs= [](int32_t oct) { return 18 + 12 * oct; };
-		[[maybe_unused]] auto G = [](int32_t oct) { return 19 + 12 * oct; };
-		[[maybe_unused]] auto Gs= [](int32_t oct) { return 20 + 12 * oct; };
-		[[maybe_unused]] auto A = [](int32_t oct) { return 21 + 12 * oct; };
-		[[maybe_unused]] auto As= [](int32_t oct) { return 22 + 12 * oct; };
-		[[maybe_unused]] auto B = [](int32_t oct) { return 23 + 12 * oct; };
+		[[maybe_unused]] auto C = [](int32_t oct) { return 12.0f + 12.0f * oct; };
+		[[maybe_unused]] auto Cs= [](int32_t oct) { return 13.0f + 12.0f * oct; };
+		[[maybe_unused]] auto D = [](int32_t oct) { return 14.0f + 12.0f * oct; };
+		[[maybe_unused]] auto Ds= [](int32_t oct) { return 15.0f + 12.0f * oct; };
+		[[maybe_unused]] auto E = [](int32_t oct) { return 16.0f + 12.0f * oct; };
+		[[maybe_unused]] auto F = [](int32_t oct) { return 17.0f + 12.0f * oct; };
+		[[maybe_unused]] auto Fs= [](int32_t oct) { return 18.0f + 12.0f * oct; };
+		[[maybe_unused]] auto G = [](int32_t oct) { return 19.0f + 12.0f * oct; };
+		[[maybe_unused]] auto Gs= [](int32_t oct) { return 20.0f + 12.0f * oct; };
+		[[maybe_unused]] auto A = [](int32_t oct) { return 21.0f + 12.0f * oct; };
+		[[maybe_unused]] auto As= [](int32_t oct) { return 22.0f + 12.0f * oct; };
+		[[maybe_unused]] auto B = [](int32_t oct) { return 23.0f + 12.0f * oct; };
 
 		tone( 0.0f, 1.0f / 4.0f, midi2hz( C(4) ), 0.5f );
 		tone( 0.0f, 1.0f / 4.0f, midi2hz( E(4) ), 0.5f );
@@ -94,7 +96,7 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 
 			float Q = 0.5f;
 
-			float omega = 2 * M_PI * hz / 48000.0f;
+			float omega = 2.0f * float(M_PI) * hz / 48000.0f;
 			float alpha = std::sin(omega) / (2.0f * Q);
 
 			float b0 = (1 - std::cos(omega)) / 2.0f;
@@ -348,7 +350,7 @@ void GP21IntroMode::update(float elapsed) {
 
 		//cube-ground collisions:
 		if (cube.at < target_z) {
-			cube.at = target_z;
+			cube.at = float(target_z);
 			if (cube.velocity < 0.0f) {
 				cube.velocity = std::max(0.0f, -0.5f * cube.velocity - 0.5f);
 			}
