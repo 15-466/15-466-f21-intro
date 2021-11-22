@@ -25,6 +25,7 @@ struct GP21IntroMode : Mode {
 	std::shared_ptr< Mode > next_mode;
 
 	//will start playing music on launch, will silence music on quit:
+	std::unique_ptr< Sound::Sample > music_sample;
 	std::shared_ptr< Sound::PlayingSample > music;
 
 	//will draw a fancy set of cubes with dynamically generated vertices:

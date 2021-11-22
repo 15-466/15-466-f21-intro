@@ -10,8 +10,152 @@
 
 #include <algorithm>
 #include <random>
+#include <fstream>
 
 GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_mode(next_mode_) {
+	{ // ------ music ------
+		std::vector< float > data(10 * 48000, 0.0f);
+
+		//triangle wave:
+		[[maybe_unused]] auto triangle01 = [](float t) -> float {
+			t += 0.25f;
+			return std::abs(4.0f * (t - std::floor(t)) - 2.0f) - 1.0f;
+		};
+		//extra crunchy 512-entry-table, 6-bit sine wave:
+		[[maybe_unused]] auto sine01 = [](float t) -> float {
+			t -= std::floor(t);
+			t = std::round(t * 512.0f) / 512.0f;
+			return std::round( std::sin(t * 2.0f * M_PI) * 1.0f ) / 1.0f;
+		};
+
+		constexpr float Attack  = 0.02f;
+		constexpr float Decay   = 0.0f;
+		constexpr float Sustain = 1.0f;
+		constexpr float Release = 0.1f;
+
+		//play synth at given time for given length at given frequency:
+		auto tone = [&](float start, float len, float hz, float vol){
+			int32_t begin = start * 48000;
+			int32_t end = begin + (len + Release) * 48000;
+
+			for (int32_t sample = begin; sample < end; ++sample) {
+				float t = (sample - begin + 0.5f) / 48000.0f;
+
+				//envelope value:
+				float env;
+				if (t < Attack) env = t / Attack;
+				else if (t < Attack + Decay) env = ((t - Attack) / Decay) * (Sustain - 1.0f) + 1.0f;
+				else if (t <= len) env = Sustain;
+				else env = std::min(1.0f, (t - len) / Release) * (0.0f - Sustain) + Sustain;
+
+				//osc2:
+				[[maybe_unused]] float osc2 = triangle01(t * hz * 0.99f);
+
+				//osc1 (with FM... well, PM):
+				float osc1 = triangle01((t + osc2 * 0.005f) * hz);
+
+				data[sample] += vol * env * osc1;
+			}
+		};
+
+		//midi note number to frequency (based on A4 being 440hz)
+		auto midi2hz = [](float midi) -> float {
+			return 440.0f * std::exp2( (midi - 69.0f) / 12.0f );
+		};
+
+		[[maybe_unused]] auto C = [](int32_t oct) { return 12 + 12 * oct; };
+		[[maybe_unused]] auto Cs= [](int32_t oct) { return 13 + 12 * oct; };
+		[[maybe_unused]] auto D = [](int32_t oct) { return 14 + 12 * oct; };
+		[[maybe_unused]] auto Ds= [](int32_t oct) { return 15 + 12 * oct; };
+		[[maybe_unused]] auto E = [](int32_t oct) { return 16 + 12 * oct; };
+		[[maybe_unused]] auto F = [](int32_t oct) { return 17 + 12 * oct; };
+		[[maybe_unused]] auto Fs= [](int32_t oct) { return 18 + 12 * oct; };
+		[[maybe_unused]] auto G = [](int32_t oct) { return 19 + 12 * oct; };
+		[[maybe_unused]] auto Gs= [](int32_t oct) { return 20 + 12 * oct; };
+		[[maybe_unused]] auto A = [](int32_t oct) { return 21 + 12 * oct; };
+		[[maybe_unused]] auto As= [](int32_t oct) { return 22 + 12 * oct; };
+		[[maybe_unused]] auto B = [](int32_t oct) { return 23 + 12 * oct; };
+
+		tone( 0.0f, 1.0f / 4.0f, midi2hz( C(4) ), 0.5f );
+		tone( 0.0f, 1.0f / 4.0f, midi2hz( E(4) ), 0.5f );
+		tone( 0.0f, 1.0f / 4.0f, midi2hz( G(4) ), 0.5f );
+
+		tone( 0.5f, 1.0f / 4.0f, midi2hz( D(4) ), 0.5f );
+		tone( 1.0f, 1.0f / 4.0f, midi2hz( E(4) ), 0.5f );
+		tone( 1.5f, 1.0f / 4.0f, midi2hz( F(4) ), 0.5f );
+		tone( 2.0f, 1.0f / 4.0f, midi2hz( G(4) ), 0.5f );
+		tone( 2.5f, 1.0f / 4.0f, midi2hz( A(4) ), 0.5f );
+		tone( 3.0f, 1.0f / 4.0f, midi2hz( B(4) ), 0.5f );
+	
+	
+		//some sort of resonant low pass filter as per:
+		// http://shepazu.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
+		[[maybe_unused]] auto lowpass = [](std::vector< float > &data, float hz) {
+
+			float Q = 0.5f;
+
+			float omega = 2 * M_PI * hz / 48000.0f;
+			float alpha = std::sin(omega) / (2.0f * Q);
+
+			float b0 = (1 - std::cos(omega)) / 2.0f;
+			float b1 = 1 - std::cos(omega);
+			float b2 = (1 - std::cos(omega)) / 2.0f;
+			float a0 = 1.0f + alpha;
+			float a1 = -2.0f * std::cos(omega);
+			float a2 = 1.0f - alpha;
+
+			b0 /= a0;
+			b1 /= a0;
+			b2 /= a0;
+			a1 /= a0;
+			a2 /= a0;
+
+			float x1 = 0.0f;
+			float x2 = 0.0f;
+			float y1 = 0.0f;
+			float y2 = 0.0f;
+			for (float &x0 : data) {
+				float y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+				x2 = x1;
+				x1 = x0;
+				y2 = y1;
+				y1 = y0;
+
+				x0 = y0;
+			}
+
+		};
+
+		lowpass(data, 4000.0f);
+		/*lowpass(data, 4000.0f);*/
+
+		{ //run a basic 'digital reverb' over stuff:
+			//use a delay line with a few different taps and feedbacks:
+			std::array< float, 2 * 48000 > delay;
+			for (auto &s : delay) s = 0.0f; //clear delay line
+			uint32_t head = 0;
+			auto tap = [&](float offset) -> float {
+				return delay[(head + int32_t(delay.size()) - int32_t(std::floor(offset * 48000.0f))) % delay.size()];
+			};
+			for (float &s : data) {
+				float wet = 0.5f * s + (1.0f * tap(0.1f) + 1.0f * tap(0.11f) + 1.0f * tap(0.05f)) / 4.0f;
+				delay[head] = wet;
+				head = (head + 1) % delay.size();
+				s = wet; //DEBUG -- should mix?
+			}
+		}
+
+
+
+		{ //DEBUG:
+			std::ofstream dump("music-dump.f32", std::ios::binary);
+			dump.write(reinterpret_cast< const char * >(data.data()), data.size() * 4);
+		}
+
+		music_sample = std::make_unique< Sound::Sample >(data);
+
+		music = Sound::play(*music_sample);
+	}
 
 	// ------ shader ------
 	//(based on ColorProgram.cpp)
