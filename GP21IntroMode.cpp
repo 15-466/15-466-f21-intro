@@ -19,24 +19,24 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 		std::vector< float > data(10 * 48000, 0.0f);
 
 		//triangle wave:
-		[[maybe_unused]] auto triangle01 = [](float t) -> float {
+		[[maybe_unused]] auto triangle = [](float t) -> float {
 			t += 0.25f;
 			return std::abs(4.0f * (t - std::floor(t)) - 2.0f) - 1.0f;
 		};
-		//extra crunchy 512-entry-table, 6-bit sine wave:
-		[[maybe_unused]] auto sine01 = [](float t) -> float {
+		//extra crunchy few-entry-table, few-bit sine wave:
+		auto sine = [](float t) -> float {
 			t -= std::floor(t);
-			t = std::round(t * 512.0f) / 512.0f;
-			return std::round( std::sin(t * 2.0f * float(M_PI)) * 1.0f ) / 1.0f;
+			t = std::round(t * 32.0f) / 32.0f;
+			return std::round( std::sin(t * 2.0f * float(M_PI)) * 16.0f ) / 16.0f;
 		};
 
 		constexpr float Attack  = 0.02f;
-		constexpr float Decay   = 0.0f;
-		constexpr float Sustain = 1.0f;
-		constexpr float Release = 0.1f;
+		constexpr float Decay   = 0.1f;
+		constexpr float Sustain = 0.8f;
+		constexpr float Release = 0.2f;
 
-		//play synth at given time for given length at given frequency:
-		auto tone = [&](float start, float len, float hz, float vol){
+		//play synth at given time for given length at given frequency with given wave:
+		auto tone = [&](float start, float len, float hz, float vol, std::function< float(float) > const &wave){
 			int32_t begin = int32_t(start * 48000);
 			int32_t end = begin + int32_t((len + Release) * 48000);
 
@@ -50,11 +50,8 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 				else if (t <= len) env = Sustain;
 				else env = std::min(1.0f, (t - len) / Release) * (0.0f - Sustain) + Sustain;
 
-				//osc2:
-				[[maybe_unused]] float osc2 = triangle01(t * hz * 0.99f);
-
-				//osc1 (with FM... well, PM):
-				float osc1 = triangle01((t + osc2 * 0.005f) * hz);
+				//simple, single-oscillator synth:
+				float osc1 = wave(t * hz);
 
 				data[sample] += vol * env * osc1;
 			}
@@ -77,59 +74,51 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 		[[maybe_unused]] auto A = [](int32_t oct) { return 21.0f + 12.0f * oct; };
 		[[maybe_unused]] auto As= [](int32_t oct) { return 22.0f + 12.0f * oct; };
 		[[maybe_unused]] auto B = [](int32_t oct) { return 23.0f + 12.0f * oct; };
+		
+		float bpm = 100.0f;
 
-		tone( 0.0f, 1.0f / 4.0f, midi2hz( C(4) ), 0.5f );
-		tone( 0.0f, 1.0f / 4.0f, midi2hz( E(4) ), 0.5f );
-		tone( 0.0f, 1.0f / 4.0f, midi2hz( G(4) ), 0.5f );
-
-		tone( 0.5f, 1.0f / 4.0f, midi2hz( D(4) ), 0.5f );
-		tone( 1.0f, 1.0f / 4.0f, midi2hz( E(4) ), 0.5f );
-		tone( 1.5f, 1.0f / 4.0f, midi2hz( F(4) ), 0.5f );
-		tone( 2.0f, 1.0f / 4.0f, midi2hz( G(4) ), 0.5f );
-		tone( 2.5f, 1.0f / 4.0f, midi2hz( A(4) ), 0.5f );
-		tone( 3.0f, 1.0f / 4.0f, midi2hz( B(4) ), 0.5f );
-	
-	
-		//some sort of resonant low pass filter as per:
-		// http://shepazu.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
-		[[maybe_unused]] auto lowpass = [](std::vector< float > &data, float hz) {
-
-			float Q = 0.5f;
-
-			float omega = 2.0f * float(M_PI) * hz / 48000.0f;
-			float alpha = std::sin(omega) / (2.0f * Q);
-
-			float b0 = (1 - std::cos(omega)) / 2.0f;
-			float b1 = 1 - std::cos(omega);
-			float b2 = (1 - std::cos(omega)) / 2.0f;
-			float a0 = 1.0f + alpha;
-			float a1 = -2.0f * std::cos(omega);
-			float a2 = 1.0f - alpha;
-
-			b0 /= a0;
-			b1 /= a0;
-			b2 /= a0;
-			a1 /= a0;
-			a2 /= a0;
-
-			float x1 = 0.0f;
-			float x2 = 0.0f;
-			float y1 = 0.0f;
-			float y2 = 0.0f;
-			for (float &x0 : data) {
-				float y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-				x2 = x1;
-				x1 = x0;
-				y2 = y1;
-				y1 = y0;
-
-				x0 = y0;
+		auto tones = [&]( std::function< float(float) > const &wave, float hz, float step, std::string const &score ) {
+			for (uint32_t begin = 0; begin < score.size(); /* later */) {
+				if (score[begin] == '#') {
+					uint32_t end = begin + 1;
+					while (end < score.size() && score[end] == '=') ++end;
+					tone( begin * step, (end - begin - 0.5f) * step, hz, 0.5f, wave );
+					begin = end;
+				} else {
+					++begin;
+				}
 			}
-
 		};
 
-		lowpass(data, 4000.0f);
-		/*lowpass(data, 4000.0f);*/
+		//some sort of basic fanfare:
+		tones( triangle, midi2hz( C(5) ), 0.5f * 60.0f / bpm, "1 . #=. 2 . . . 3#==. . 4 . . . ");
+		tones( triangle, midi2hz( B(4) ), 0.5f * 60.0f / bpm, "1 . . . 2 . . .#= . . . 4 . . . ");
+		tones( triangle, midi2hz( A(4) ), 0.5f * 60.0f / bpm, "1 .#. . 2 . . . 3 . . . 4#. . . ");
+		tones( triangle, midi2hz( G(4) ), 0.5f * 60.0f / bpm, "1 . . . 2 . . .#=#==. . 4 . . . ");
+		tones( triangle, midi2hz( F(4) ), 0.5f * 60.0f / bpm, "1 . . . 2 . . . 3 . . . 4 . . . ");
+		tones( triangle, midi2hz( E(4) ), 0.5f * 60.0f / bpm, "1 . . . 2 . . . 3 . . . 4 . . . ");
+		tones( triangle, midi2hz( D(4) ), 0.5f * 60.0f / bpm, "1 # . . 2 . . .#=#==. . 4 #== . ");
+		tones( triangle, midi2hz( C(4) ), 0.5f * 60.0f / bpm, "1 . . . 2 . . . 3 . . .#4 . . . ");
+		tones( triangle, midi2hz( G(3) ), 0.5f * 60.0f / bpm, "1 . . . 2 . . . 3#==. . 4 . . . ");
+
+		//sub-bass:
+		tones( sine, midi2hz( C(3) ), 0.5f * 60.0f / bpm, "1 . #=. 2 . . . 3#==. . 4 . . . ");
+		tones( sine, midi2hz( A(2) ), 0.5f * 60.0f / bpm, "1 .#. . 2 . . . 3 . . . 4 . . . ");
+		tones( sine, midi2hz( D(2) ), 0.5f * 60.0f / bpm, "1 # . . 2 . . .#= . . . 4 . . . ");
+
+		/*
+		//too dense:
+		tones( midi2hz( C(5) ), 0.5f * 60.0f / bpm, "1 . . . 2 . . #===. .#4 . . . ");
+		tones( midi2hz( B(4) ), 0.5f * 60.0f / bpm, "1 . . . 2 #=#=. 3 . . 4 . . . ");
+		tones( midi2hz( A(4) ), 0.5f * 60.0f / bpm, "1 . .#=##=. . . 3 . . 4#. . . ");
+		tones( midi2hz( G(4) ), 0.5f * 60.0f / bpm, "1 ##= . 2 #=#=#===. . 4 . . . ");
+		tones( midi2hz( F(4) ), 0.5f * 60.0f / bpm, "1 . .#=##== . . 3 . . 4 . . . ");
+		tones( midi2hz( E(4) ), 0.5f * 60.0f / bpm, "1 ##= . 2 . . . 3 . . 4 . . . ");
+		tones( midi2hz( D(4) ), 0.5f * 60.0f / bpm, "1 . .#=##=#=#=#===. . 4 #== . ");
+		tones( midi2hz( C(4) ), 0.5f * 60.0f / bpm, "1 ##= . 2 . . . 3 . . 4 . . . ");
+		tones( midi2hz( G(3) ), 0.5f * 60.0f / bpm, "1 . . . 2 . . #===. . 4 . . . ");
+		tones( midi2hz( C(3) ), 0.5f * 60.0f / bpm, "1 . . . 2 . #=. 3 . . 4 . . . ");
+		*/
 
 		{ //run a basic 'digital reverb' over stuff:
 			//use a delay line with a few different taps and feedbacks:
@@ -139,15 +128,28 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 			auto tap = [&](float offset) -> float {
 				return delay[(head + int32_t(delay.size()) - int32_t(std::floor(offset * 48000.0f))) % delay.size()];
 			};
+			float smoothed = 0.0f;
 			for (float &s : data) {
-				float wet = 0.5f * s + (1.0f * tap(0.1f) + 1.0f * tap(0.11f) + 1.0f * tap(0.05f)) / 4.0f;
-				delay[head] = wet;
+				float wet = 1.0f * s + (
+					+ 6.0f * tap(0.43f)
+					+ 5.0f * tap(0.21f)
+					+ 3.0f * tap(0.13f)
+					+ 1.0f * tap(0.07f)
+					) / 16.0f;
+				smoothed += 0.05f * (wet - smoothed); //smooth off high frequencies before writing reverb buffer
+				delay[head] = smoothed;
 				head = (head + 1) % delay.size();
-				s = wet; //DEBUG -- should mix?
+				s = 0.3f * tap(0.25f) + 0.5f * s; //DEBUG -- should mix?
 			}
 		}
 
-
+		{ //do a gentle low-pass filter on output:
+			float smoothed = 0.0f;
+			for (float &s : data) {
+				smoothed += 0.3f * (s - smoothed);
+				s = smoothed;
+			}
+		}
 
 		{ //DEBUG:
 			std::ofstream dump("music-dump.f32", std::ios::binary);
@@ -305,20 +307,22 @@ GP21IntroMode::~GP21IntroMode() {
 }
 
 bool GP21IntroMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
-	/* Eventually:
 	if (evt.type == SDL_KEYDOWN) {
 		//on any key press, skip the rest of the intro:
 		music->set_volume(0.0f, 1.0f / 10.0f);
 		Mode::set_current(next_mode);
 		return true;
-	}*/
+	}
 	return false;
 }
 
 void GP21IntroMode::update(float elapsed) {
 	time += elapsed;
 	if (time > 10.0f) {
-		time -= 10.0f;
+		//time -= 10.0f;
+		music->set_volume(0.0f, 1.0f / 10.0f);
+		Mode::set_current(next_mode);
+		return;
 	}
 
 	//handle cubes falling:
