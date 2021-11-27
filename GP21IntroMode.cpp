@@ -156,6 +156,8 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 			dump.write(reinterpret_cast< const char * >(data.data()), data.size() * 4);
 		}
 
+		static std::unique_ptr< Sound::Sample > music_sample; //making static so it lives past lifetime of IntroMode
+
 		music_sample = std::make_unique< Sound::Sample >(data);
 
 		music = Sound::play(*music_sample);
