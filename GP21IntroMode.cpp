@@ -151,10 +151,10 @@ GP21IntroMode::GP21IntroMode(std::shared_ptr< Mode > const &next_mode_) : next_m
 			}
 		}
 
-		{ //DEBUG:
+		/*{ //DEBUG:
 			std::ofstream dump("music-dump.f32", std::ios::binary);
 			dump.write(reinterpret_cast< const char * >(data.data()), data.size() * 4);
-		}
+		}*/
 
 		static std::unique_ptr< Sound::Sample > music_sample; //making static so it lives past lifetime of IntroMode
 
